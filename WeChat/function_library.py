@@ -4,6 +4,8 @@ import itchat
 import time
 import re
 import os
+import requests
+import json
 
 
 def get_msg_info(msg,setting):
@@ -78,7 +80,8 @@ def get_msg_info(msg,setting):
                        u'\n\n[03]->防止撤销操作\n\n[04]->允许撤销操作' \
                        u'\n\n[05]->机器人自动陪聊\n\n[06]->关闭机器人陪聊' \
                        u'\n\n[07]->清除缓存照片\n\n[08]->清除缓存视频' \
-                       u'\n\n[09]->清除缓存附件\n\n[10]->清除缓存音频'
+                       u'\n\n[09]->清除缓存附件\n\n[10]->清除缓存音频'\
+                       u'\n\n[xx]->退出网页版微信'
         elif msg_content == u'01':
             setting.auto_replay = True
             for k,v in setting.person_auto.items():
@@ -94,6 +97,12 @@ def get_msg_info(msg,setting):
         elif msg_content == u'04':
             setting.revocation = False
             response = u'防撤销功能已关闭！'
+        elif msg_content == u'05':
+            setting.robot = True
+            response = u'机器人陪聊已打开！'
+        elif msg_content == u'06':
+            setting.robot = False
+            response = u'机器人陪聊已关闭！'
         elif msg_content == u'07':
             pic_count = _clear_file('Picture')
             response = u'正在手动清理本地图片...\n\n共清理图片文件个数：%s' % pic_count
@@ -110,6 +119,9 @@ def get_msg_info(msg,setting):
             before_count = len(setting.msg_information)
             now_count = len(_check_msg_time(setting.msg_information))
             response = u'正在手动清理超时的信息！\n\n清理前会话数：%s \n清理后会话数：%s' % (before_count, now_count)
+        elif msg_content == u'xx' or msg_content == u'XX':
+            itchat.logout()
+            response = u'您已退出网页版微信'
         else:
             response = u'请输入正确的指令'
 
@@ -119,6 +131,17 @@ def get_msg_info(msg,setting):
             if msg_content == '0':
                 setting.person_auto[msg_from] = False
                 response = u'您已关闭自动回复，我一会再和您联系！'
+
+        if setting.auto_reply == False and group_name == None and setting.robot == True:
+            data = {
+                'key': 'a654179b2c3849468503da9e053316e4',
+                'info': msg_content,
+                'userid': msg['FromUserName']
+            }
+            reply_content = requests.post('http://www.tuling123.com/openapi/api', data=data)
+            # response =u'[机器人陪聊中...]\n\n'+json.loads(reply_content.content)['text']
+            response = json.loads(reply_content.content)['text']
+
 
         if setting.revocation == True:
             #先清理过期数据
@@ -142,6 +165,7 @@ def get_msg_info(msg,setting):
             if msg_type == 'Picture' or msg_type == 'Video' or msg_type == 'Recording' or msg_type == 'Attachment':
                 msg['Text']('./' + msg_type + '/' + msg_filename)  # 下载文件到相应的文件夹中
 
+
     if msg_to == 'filehelper' and msg_from == myid:
         itchat.send(response, toUserName='filehelper')
     else:
@@ -160,7 +184,7 @@ def _get_user_auto(setting,msg_from):
     if setting.person_auto.get(msg_from) <> None:
         setting.person_auto[msg_from] = setting.person_auto.get(msg_from)
     else:
-        setting.person_auto.update({msg_from:setting.auto_replay})
+        setting.person_auto.update({msg_from:setting.auto_reply})
 
 
 
