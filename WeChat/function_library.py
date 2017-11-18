@@ -10,7 +10,6 @@ import json
 
 def get_msg_info(msg,setting):
     '''获取消息内容并解析'''
-
     myid = itchat.get_friends()[0]['UserName']  # 本人ID
     response = None #初始化回复内容
     msg_rev_time = time.time() #接收消息的时间戳
@@ -23,6 +22,7 @@ def get_msg_info(msg,setting):
     msg_url = None #分享的链接
     group_name = None #群聊名称
     msg_user_remarkname = None
+    msg_user_nickname = None
     #如果为群聊消息
     msg_from = msg['ActualUserName'] if msg.get('ActualUserName') else msg['FromUserName'] # 发送者ID
     msg_to = msg['ToUserName'] if msg_from == myid else None #接受者ID
@@ -32,9 +32,6 @@ def get_msg_info(msg,setting):
         group_name = msg['User']['NickName'] if msg['User']['NickName'] and msg.get('ActualNickName') else group_name #群聊名称
 
 
-
-    #判断消息类型并处理
-    _judge_msg_type(msg, msg_type)
     #初始化个人自动回复状态
     _get_user_auto(setting, msg_from)
 
@@ -75,8 +72,7 @@ def get_msg_info(msg,setting):
     # 如果为我本人发送并发送给自己
     if msg_from == myid and msg_to == 'filehelper':
         if msg_content == u'帮助':
-            response = u'[00]->手动清理缓存的超时信息' \
-                       u'\n\n[01]->开启自动回复\n\n[02]->关闭自动回复' \
+            response = u'[01]->开启自动回复\n\n[02]->关闭自动回复' \
                        u'\n\n[03]->防止撤销操作\n\n[04]->允许撤销操作' \
                        u'\n\n[05]->机器人自动陪聊\n\n[06]->关闭机器人陪聊' \
                        u'\n\n[07]->清除缓存照片\n\n[08]->清除缓存视频' \
@@ -110,15 +106,11 @@ def get_msg_info(msg,setting):
             vid_count = _clear_file('Video')
             response = u'正在手动清理本地视频...\n\n共清理视频文件个数：%s' % vid_count
         elif msg_content == u'09':
-            vid_count = _clear_file('Attachment')
-            response = u'正在手动清理本地附件...\n\n共清理附件文件个数：%s' % vid_count
+            att_count = _clear_file('Attachment')
+            response = u'正在手动清理本地附件...\n\n共清理附件文件个数：%s' % att_count
         elif msg_content == u'10':
-            vid_count = _clear_file('Recording')
-            response = u'正在手动清理本地音频...\n\n共清理音频文件个数：%s' % vid_count
-        elif msg_content == u'00':
-            before_count = len(setting.msg_information)
-            now_count = len(_check_msg_time(setting.msg_information))
-            response = u'正在手动清理超时的信息！\n\n清理前会话数：%s \n清理后会话数：%s' % (before_count, now_count)
+            rec_count = _clear_file('Recording')
+            response = u'正在手动清理本地音频...\n\n共清理音频文件个数：%s' % rec_count
         elif msg_content == u'xx' or msg_content == u'XX':
             itchat.logout()
             response = u'您已退出网页版微信'
@@ -154,7 +146,7 @@ def get_msg_info(msg,setting):
                 {
                     msg_id: {
                         'msg_rev_time': msg_rev_time, 'msg_rev_time_format': msg_rev_time_format,
-                        'msg_type': msg_type, 'msg_from': msg_from, 'msg_id': msg_id, 'msg_time': msg_time,
+                        'msg_type': msg_type, 'msg_from': msg_from,'msg_time': msg_time,
                         'msg_content': msg_content, 'msg_filename': msg_filename, 'msg_url': msg_url,
                         'msg_user_nickname': msg_user_nickname, 'msg_user_remarkname': msg_user_remarkname,
                         'group_name':group_name
@@ -170,12 +162,6 @@ def get_msg_info(msg,setting):
         itchat.send(response, toUserName='filehelper')
     else:
         itchat.send(response, toUserName=msg_from)
-
-
-def _judge_msg_type(msg,msg_type):
-    '''判断消息类型并处理'''
-    # 如果发送为纯文本或好友推荐
-
 
 
 
@@ -197,18 +183,6 @@ def _clear_file(filetype):
     for i in file_list:
         os.remove(addr + i)
     return file_count
-
-
-
-def _check_msg_time(dict):
-    '''清除时间超过2min的消息，节省内存'''
-    now_time = time.time()
-    if dict:
-        for k, v in dict.items():
-            time_difference = int(now_time) - int(v['msgtime'])
-            if time_difference >= 2 * 60 + 10: # 如果时间大于2min,10秒缓冲期
-                dict.pop(k)
-    return dict
 
 
 
