@@ -1,16 +1,20 @@
 #! /usr/bin/python
 # -*- coding: utf-8 -*-
+from __future__ import division
 import itchat
 import time
 import re
 import os
 import requests
 import json
+from pymongo import MongoClient
+
+from bson import json_util as jsonb
 
 
 def get_msg_info(msg,setting):
     '''获取消息内容并解析'''
-    myid = itchat.get_friends()[0]['UserName']  # 本人ID
+    myid = itchat.get_friends()[0]['UserName']  # 本人ID`
     response = None #初始化回复内容
     msg_rev_time = time.time() #接收消息的时间戳
     msg_rev_time_format = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime()) #格式化接收时间
@@ -27,7 +31,10 @@ def get_msg_info(msg,setting):
     msg_from = msg['ActualUserName'] if msg.get('ActualUserName') else msg['FromUserName'] # 发送者ID
     msg_to = msg['ToUserName'] if msg_from == myid else None #接受者ID
     if msg_to <> 'filehelper':
-        msg_user_nickname = msg['ActualNickName'] if msg.get('ActualNickName') else msg['User']['NickName'] # 发送者昵称
+        try:
+            msg_user_nickname = msg['ActualNickName'] if msg.get('ActualNickName') else msg['User']['NickName'] # 发送者昵称
+        except:
+            pass
         msg_user_remarkname = itchat.search_friends(userName=msg_from)['RemarkName'] if itchat.search_friends(userName=msg_from) else msg_user_remarkname #发送者备注
         group_name = msg['User']['NickName'] if msg['User']['NickName'] and msg.get('ActualNickName') else group_name #群聊名称
 
@@ -71,13 +78,13 @@ def get_msg_info(msg,setting):
     #对相应的消息作回复
     # 如果为我本人发送并发送给自己
     if msg_from == myid and msg_to == 'filehelper':
-        if msg_content == u'帮助':
+        if msg_content in [u'帮助',u'菜单']:
             response = u'[01]->开启自动回复\n\n[02]->关闭自动回复' \
                        u'\n\n[03]->防止撤销操作\n\n[04]->允许撤销操作' \
                        u'\n\n[05]->机器人自动陪聊\n\n[06]->关闭机器人陪聊' \
                        u'\n\n[07]->清除缓存照片\n\n[08]->清除缓存视频' \
-                       u'\n\n[09]->清除缓存附件\n\n[10]->清除缓存音频'\
-                       u'\n\n[xx]->退出网页版微信'
+                       u'\n\n[09]->清除缓存附件\n\n[10]->清除缓存音频' \
+                       u'\n\n[xx]->退出网页版微信\n\n[查询 用户名]->查看撤回记录'
         elif msg_content == u'01':
             setting.auto_replay = True
             for k,v in setting.person_auto.items():
@@ -100,17 +107,24 @@ def get_msg_info(msg,setting):
             setting.robot = False
             response = u'机器人陪聊已关闭！'
         elif msg_content == u'07':
+            filesize = getfilesize('./Picture')
             pic_count = _clear_file('Picture')
-            response = u'正在手动清理本地图片...\n\n共清理图片文件个数：%s' % pic_count
+            response = u'正在手动清理本地图片...\n\n清理图片文件个数：%s\n(文件大小:%s)' % (pic_count,filesize)
         elif msg_content == u'08':
+            filesize = getfilesize('./Video')
             vid_count = _clear_file('Video')
-            response = u'正在手动清理本地视频...\n\n共清理视频文件个数：%s' % vid_count
+            response = u'正在手动清理本地视频...\n\n共清理视频文件个数：%s\n(文件大小:%s)' % (vid_count,filesize)
         elif msg_content == u'09':
+            filesize = getfilesize('./Attachment')
             att_count = _clear_file('Attachment')
-            response = u'正在手动清理本地附件...\n\n共清理附件文件个数：%s' % att_count
+            response = u'正在手动清理本地附件...\n\n共清理附件文件个数：%s\n(文件大小:%s)' % (att_count,filesize)
         elif msg_content == u'10':
+            filesize = getfilesize('./Recording')
             rec_count = _clear_file('Recording')
-            response = u'正在手动清理本地音频...\n\n共清理音频文件个数：%s' % rec_count
+            response = u'正在手动清理本地音频...\n\n共清理音频文件个数：%s\n(文件大小:%s)' % (rec_count,filesize)
+        elif '查询' in msg_content:
+            find_msg(msg_content)
+            response = u'已完成查询！'
         elif msg_content == u'xx' or msg_content == u'XX':
             itchat.logout()
             response = u'您已退出网页版微信'
@@ -167,9 +181,11 @@ def get_msg_info(msg,setting):
 
 def _get_user_auto(setting,msg_from):
     '''初始化个人自动回复状态'''
-    if setting.person_auto.get(msg_from) <> None:
-        setting.person_auto[msg_from] = setting.person_auto.get(msg_from)
-    else:
+    # if setting.person_auto.get(msg_from) <> None:
+    #     setting.person_auto[msg_from] = setting.person_auto.get(msg_from)
+    # else:
+    #     setting.person_auto.update({msg_from:setting.auto_reply})
+    if setting.person_auto.get(msg_from) == None:
         setting.person_auto.update({msg_from:setting.auto_reply})
 
 
@@ -217,7 +233,7 @@ def send_revocation(msg,setting):
         response = cheak_group(isgroup)+u'您的好友：%s(%s)，于%s撤回了如下的消息：\n\n[%s]: %s'\
                         %(revocation_remarkname,revocation_nickname,revocation_time,\
                           revocation_msg_time,revocation_msg['msg_content'])
-
+        save_msg(cheak_group(isgroup),revocation_remarkname,revocation_nickname,revocation_time,revocation_msg_time,revocation_msg['msg_content'])
         itchat.send_msg(response,toUserName='filehelper')
 
     elif revocation_type == 'Sharing':
@@ -237,3 +253,55 @@ def cheak_group(isgroup):
         res_heard = u'群名：%s\n\n'%isgroup
 
     return res_heard
+
+
+def save_msg(groupname,remarkname,nickname,rev_time,send_time,msg_con):
+    '''保存撤回的消息'''
+    conn = MongoClient('localhost',27017)
+    db = conn.wechat
+    msg = db.msg
+    data = {'群名称':groupname,'备注':remarkname,'昵称':nickname,'撤销时间':rev_time,'发送时间':send_time,'撤销内容':msg_con}
+    save_id = msg.insert(data)
+    if save_id:
+        print u'撤回信息已储存！'
+        print '*'*80
+    else:
+        print u'信息储存遇到问题！'
+        print '*'*80
+    # db.close()
+
+
+def find_msg(content):
+    name = re.findall('\s(.*)',content)[0].strip()
+    conn = MongoClient('localhost', 27017)
+    db = conn.wechat
+    msg = db.msg
+    if name in ['所有','全部']:
+        for i in msg.find():
+            remarkname = i[u'备注'] if i[u'备注'] else '无备注'
+            creat_res(i,remarkname)
+    else:
+        data = msg.find({'$or':[{u'备注':name},{u'昵称':name}]})
+        for i in data:
+            remarkname = i[u'备注'] if i[u'备注'] else '无备注'
+            creat_res(i, remarkname)
+
+
+def creat_res(i,remarkname):
+    '''构建发送内容'''
+    response = '群名称：' + i[u'群名称'] + '\r备注：' + remarkname + \
+               '\r昵称：' + i[u'昵称'] + '\r撤销时间：' + i[u'撤销时间'] + \
+               '\r发送时间：' + i[u'发送时间'] + '\r撤销内容：' + i[u'撤销内容']
+    itchat.send_msg(response, toUserName='filehelper')
+
+
+def getfilesize(filepath):
+    '''获取文件夹大小'''
+    size = 0
+    for path,dirs,name in os.walk(filepath):
+        for file in name:
+            size += os.path.getsize(os.path.join(path,file))
+    # print (size/float(1024**2))
+    size = str(round(size/(1024**2),2))+'M' if (size/(1024**2))>1 else str(round(size/1024,2))+'K'
+
+    return size
